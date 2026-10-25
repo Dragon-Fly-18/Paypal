@@ -1,7 +1,6 @@
 import os
 from enum import Enum
 
-import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +12,7 @@ from services import (
     create_paypal_sandbox_order,
     paypal_sandbox_configured,
     review_sample_document,
+    SandboxIntegrationError,
 )
 
 load_dotenv()
@@ -219,7 +219,7 @@ def sandbox_order(request: SandboxOrderRequest):
         raise HTTPException(status_code=503, detail="PayPal Sandbox is not configured.")
     try:
         return create_paypal_sandbox_order(request.amount, request.currency)
-    except (httpx.HTTPError, KeyError):
+    except SandboxIntegrationError:
         raise HTTPException(
             status_code=502,
             detail="PayPal Sandbox could not create the order. Check server configuration.",

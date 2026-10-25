@@ -5,8 +5,6 @@ import os
 import re
 from typing import Any
 
-import httpx
-
 from knowledge_base import NO_MATCH_RESPONSE, search_guidance
 
 PAYPAL_SANDBOX_BASE_URL = "https://api-m.sandbox.paypal.com"
@@ -15,6 +13,10 @@ SENSITIVE_PATTERNS = (
     re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b", re.IGNORECASE),
     re.compile(r"\b(?:password|passcode|otp|pin)\s*[:=]\s*\S+", re.IGNORECASE),
 )
+
+
+class SandboxIntegrationError(RuntimeError):
+    """Safe public boundary for PayPal Sandbox dependency or request failures."""
 
 
 def contains_sensitive_data(value: str) -> bool:
@@ -138,34 +140,44 @@ def create_paypal_sandbox_order(amount: str, currency: str) -> dict[str, Any]:
     client_id = os.getenv("PAYPAL_SANDBOX_CLIENT_ID", "").strip()
     client_secret = os.getenv("PAYPAL_SANDBOX_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
-        raise RuntimeError("PayPal Sandbox credentials are not configured.")
+        raise SandboxIntegrationError("PayPal Sandbox credentials are not configured.")
 
-    with httpx.Client(timeout=15.0) as client:
-        token_response = client.post(
-            f"{PAYPAL_SANDBOX_BASE_URL}/v1/oauth2/token",
-            data={"grant_type": "client_credentials"},
-            auth=(client_id, client_secret),
-            headers={"Accept": "application/json"},
-        )
-        token_response.raise_for_status()
-        access_token = token_response.json()["access_token"]
-        order_response = client.post(
-            f"{PAYPAL_SANDBOX_BASE_URL}/v2/checkout/orders",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-                "PayPal-Request-Id": os.urandom(12).hex(),
-            },
-            content=json.dumps({
-                "intent": "CAPTURE",
-                "purchase_units": [{
-                    "amount": {"currency_code": currency, "value": amount},
-                    "description": "PayReady Sandbox demonstration",
-                }],
-            }),
-        )
-        order_response.raise_for_status()
-        order = order_response.json()
+    try:
+        import httpx
+    except ImportError as error:
+        raise SandboxIntegrationError(
+            "The optional PayPal Sandbox dependency is not installed."
+        ) from error
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            token_response = client.post(
+                f"{PAYPAL_SANDBOX_BASE_URL}/v1/oauth2/token",
+                data={"grant_type": "client_credentials"},
+                auth=(client_id, client_secret),
+                headers={"Accept": "application/json"},
+            )
+            token_response.raise_for_status()
+            access_token = token_response.json()["access_token"]
+            order_response = client.post(
+                f"{PAYPAL_SANDBOX_BASE_URL}/v2/checkout/orders",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                    "PayPal-Request-Id": os.urandom(12).hex(),
+                },
+                content=json.dumps({
+                    "intent": "CAPTURE",
+                    "purchase_units": [{
+                        "amount": {"currency_code": currency, "value": amount},
+                        "description": "PayReady Sandbox demonstration",
+                    }],
+                }),
+            )
+            order_response.raise_for_status()
+            order = order_response.json()
+    except (httpx.HTTPError, KeyError) as error:
+        raise SandboxIntegrationError("PayPal Sandbox request failed.") from error
 
     approve_url = next(
         (link["href"] for link in order.get("links", []) if link.get("rel") == "approve"),
