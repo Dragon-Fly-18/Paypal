@@ -1,4 +1,4 @@
-"""General PayPal India guidance used by the first assistant implementation."""
+"""Verified, general PayPal India guidance used by the assistant."""
 
 KNOWLEDGE_BASE = [
     {
@@ -15,11 +15,12 @@ KNOWLEDGE_BASE = [
             "aadhaar",
         ),
         "answer": (
-            "PayPal may ask you to confirm information about your identity or "
-            "business. Review the instructions shown in your PayPal account and "
-            "provide only the information requested through official PayPal "
-            "channels. Requirements can vary by account and may change."
+            "Follow the identity-verification instructions and notifications in "
+            "your PayPal account. PayPal India says the process can include identity "
+            "documents and a video verification call. Make sure account details match "
+            "your documents and submit information only through official PayPal flows."
         ),
+        "source_title": "PayPal India: How do I confirm my identity?",
         "source_url": (
             "https://www.paypal.com/in/cshelp/article/"
             "how-do-i-confirm-my-identity--help606"
@@ -38,13 +39,15 @@ KNOWLEDGE_BASE = [
             "accept",
         ),
         "answer": (
-            "To prepare to receive payments, complete the account steps shown "
-            "in your PayPal account and check that your account information is "
-            "current. Payment availability, holds, and withdrawal options "
-            "depend on your account and applicable regulations."
+            "PayPal India says merchants generally need to confirm their email and "
+            "identity before receiving and withdrawing payments. For international "
+            "payments, check the current requirements shown in your account, including "
+            "PAN verification, an Indian bank account, and a purpose code where required."
         ),
+        "source_title": "PayPal India: How do I receive payments?",
         "source_url": (
-            "https://www.paypal.com/in/webapps/mpp/accept-payments-online"
+            "https://www.paypal.com/in/cshelp/article/"
+            "how-do-i-receive-payments-through-paypal-HELP667"
         ),
     },
     {
@@ -62,38 +65,51 @@ KNOWLEDGE_BASE = [
             "rejected",
         ),
         "answer": (
-            "Verification can take longer when information is incomplete, "
-            "does not match, or requires additional review. Check your account "
-            "notifications, follow the exact requested next step, and contact "
-            "PayPal through its official Help or Support channels if the issue "
-            "continues. This assistant cannot inspect or decide your account "
-            "verification status."
+            "Verification may need more time when information is incomplete, unclear, "
+            "or does not match. Check PayPal account notifications, confirm that requested "
+            "documents are legible and current, and contact official PayPal support if the "
+            "requested step still cannot be completed."
         ),
+        "source_title": "PayPal India: Identity confirmation help",
         "source_url": (
-            "https://www.paypal.com/in/cshelp/contact-us"
+            "https://www.paypal.com/in/cshelp/article/"
+            "how-do-i-confirm-my-identity--help606"
         ),
+    },
+    {
+        "topic": "PayPal Sandbox",
+        "keywords": (
+            "sandbox", "developer", "api", "checkout", "order", "integration",
+        ),
+        "answer": (
+            "PayPal Sandbox is a developer test environment for payment integrations. "
+            "Sandbox orders do not represent live payments and do not verify or approve "
+            "a merchant's KYC status."
+        ),
+        "source_title": "PayPal Developer: Make REST API requests",
+        "source_url": "https://developer.paypal.com/api/make-api-requests/",
     },
 ]
 
 NO_MATCH_RESPONSE = (
-    "I do not have a relevant general guidance answer for that question yet. "
+    "I do not have a verified guidance answer for that question yet. "
     "Please check official PayPal Help for account-specific information."
 )
 
 
+def search_guidance(question: str, limit: int = 3) -> list[dict]:
+    """Return relevant entries ordered by keyword score."""
+    normalized_question = question.casefold()
+    scored = []
+    for entry in KNOWLEDGE_BASE:
+        score = sum(keyword in normalized_question for keyword in entry["keywords"])
+        if score:
+            scored.append((score, entry))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [entry for _, entry in scored[:limit]]
+
+
 def find_guidance(question: str) -> dict | None:
     """Return the best keyword match without storing the submitted question."""
-    normalized_question = question.casefold()
-    matches = [
-        entry
-        for entry in KNOWLEDGE_BASE
-        if any(keyword in normalized_question for keyword in entry["keywords"])
-    ]
-    if not matches:
-        return None
-    return max(
-        matches,
-        key=lambda entry: sum(
-            keyword in normalized_question for keyword in entry["keywords"]
-        ),
-    )
+    matches = search_guidance(question, limit=1)
+    return matches[0] if matches else None
