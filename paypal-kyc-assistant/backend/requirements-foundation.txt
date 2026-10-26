@@ -1,0 +1,9 @@
+# Minimal foundation runtime and API test dependencies, verified together.
+# Optional Gemini integration is listed in the existing requirements.txt.
+fastapi==0.159.1
+starlette==1.9.0
+pydantic==2.14.1
+uvicorn==0.54.0
+python-dotenv==1.2.4
+httpx==0.28.1
+httpx2==2.16.0

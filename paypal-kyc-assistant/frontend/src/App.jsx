@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
-const API_URL = 'http://127.0.0.1:8000/api/readiness'
-const ASSISTANT_URL = 'http://127.0.0.1:8000/api/assistant'
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
+const apiUrl = (path) => `${API_BASE_URL}${path}`
 const SUGGESTED_QUESTIONS = [
   'Why might verification be delayed?',
   'How do I prepare for verification?',
@@ -26,12 +26,23 @@ function App() {
   const [assistantAnswer, setAssistantAnswer] = useState(null)
   const [assistantLoading, setAssistantLoading] = useState(false)
   const [assistantError, setAssistantError] = useState('')
+  const [accountType, setAccountType] = useState('personal')
+  const [readinessResult, setReadinessResult] = useState(null)
+  const [documentType, setDocumentType] = useState('identity')
+  const [sampleText, setSampleText] = useState('')
+  const [imageQuality, setImageQuality] = useState(80)
+  const [documentResult, setDocumentResult] = useState(null)
+  const [documentError, setDocumentError] = useState('')
+  const [documentLoading, setDocumentLoading] = useState(false)
+  const [sandboxStatus, setSandboxStatus] = useState(null)
+  const [sandboxResult, setSandboxResult] = useState(null)
+  const [sandboxError, setSandboxError] = useState('')
 
-  const fetchReadiness = async () => {
+  const fetchReadiness = useCallback(async (selectedType) => {
     setLoading(true)
     setError('')
     try {
-      const response = await fetch(API_URL)
+      const response = await fetch(apiUrl(`/api/readiness?account_type=${selectedType}`))
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`)
       }
@@ -40,6 +51,8 @@ function App() {
         throw new Error('The readiness response is missing checklist steps.')
       }
       setData(result)
+      setCompletedSteps({})
+      setReadinessResult(null)
     } catch (fetchError) {
       setError(
         fetchError instanceof TypeError
@@ -49,17 +62,24 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     const request = window.setTimeout(() => {
-      fetchReadiness()
+      fetchReadiness('personal')
     }, 0)
     return () => window.clearTimeout(request)
+  }, [fetchReadiness])
+
+  useEffect(() => {
+    fetch(apiUrl('/api/paypal/sandbox/status'))
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => setSandboxStatus(result))
+      .catch(() => setSandboxStatus(null))
   }, [])
 
   const steps = data?.steps ?? []
-  const completedCount = steps.filter((step) => completedSteps[step.id]).length
+  const completedCount = steps.filter((step) => completedSteps[step.key]).length
   const progress = steps.length
     ? Math.min(100, Math.round((completedCount / steps.length) * 100))
     : 0
@@ -72,29 +92,108 @@ function App() {
   const handleQuestionSubmit = async (event) => {
     event.preventDefault()
     const submittedQuestion = question.trim()
-    if (!submittedQuestion || assistantLoading) return
+    if (submittedQuestion.length < 2 || assistantLoading) return
     setAssistantLoading(true)
     setAssistantError('')
     setAssistantAnswer(null)
     try {
-      const response = await fetch(ASSISTANT_URL, {
+      const response = await fetch(apiUrl('/api/assistant'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: submittedQuestion }),
       })
       if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`)
+        const failure = await response.json().catch(() => ({}))
+        const validationMessage = Array.isArray(failure.detail)
+          ? failure.detail[0]?.msg?.replace(/^Value error, /, '')
+          : failure.detail
+        throw new Error(validationMessage || `Request failed with status ${response.status}`)
       }
       setAssistantAnswer(await response.json())
       setQuestion('')
     } catch (submitError) {
-      setAssistantError(
-        submitError instanceof TypeError
-          ? 'The assistant is unavailable. Please check that the backend is running.'
-          : 'The assistant could not answer right now. Please try again.',
-      )
+      setAssistantError(submitError instanceof TypeError
+        ? 'The assistant is unavailable. Please check that the backend is running.'
+        : submitError.message)
     } finally {
       setAssistantLoading(false)
+    }
+  }
+
+  const changeAccountType = (selectedType) => {
+    if (selectedType === accountType) return
+    setAccountType(selectedType)
+    fetchReadiness(selectedType)
+  }
+
+  const handleStepToggle = async (stepKey) => {
+    const nextAnswers = { ...completedSteps, [stepKey]: !completedSteps[stepKey] }
+    setCompletedSteps(nextAnswers)
+    try {
+      const response = await fetch(apiUrl('/api/readiness/evaluate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_type: accountType, answers: nextAnswers }),
+      })
+      if (response.ok) setReadinessResult(await response.json())
+    } catch {
+      setReadinessResult(null)
+    }
+  }
+
+  const loadSample = async () => {
+    setDocumentError('')
+    try {
+      const response = await fetch(apiUrl(`/api/documents/sample?document_type=${documentType}`))
+      if (!response.ok) throw new Error('Sample unavailable')
+      const result = await response.json()
+      setSampleText(result.sample_text)
+      setDocumentResult(null)
+    } catch {
+      setDocumentError('The synthetic sample could not be loaded. Check that the backend is running.')
+    }
+  }
+
+  const reviewDocument = async (event) => {
+    event.preventDefault()
+    if (!sampleText.trim()) return
+    setDocumentLoading(true)
+    setDocumentError('')
+    setDocumentResult(null)
+    try {
+      const response = await fetch(apiUrl('/api/documents/review'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document_type: documentType,
+          sample_text: sampleText,
+          image_quality: imageQuality,
+          is_synthetic_or_redacted: true,
+        }),
+      })
+      if (!response.ok) throw new Error('Review rejected')
+      setDocumentResult(await response.json())
+    } catch {
+      setDocumentError('Review failed. Use only synthetic or fully redacted sample values.')
+    } finally {
+      setDocumentLoading(false)
+    }
+  }
+
+  const createSandboxOrder = async () => {
+    setSandboxError('')
+    setSandboxResult(null)
+    try {
+      const response = await fetch(apiUrl('/api/paypal/sandbox/orders'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: '1.00', currency: 'USD' }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.detail || 'Sandbox request failed')
+      setSandboxResult(result)
+    } catch (sandboxRequestError) {
+      setSandboxError(sandboxRequestError.message)
     }
   }
 
@@ -144,6 +243,18 @@ function App() {
               </div>
               {!loading && !error && <span className="completion-count">{statusText}</span>}
             </div>
+            <div className="account-switch" aria-label="Account type">
+              {['personal', 'business'].map((type) => (
+                <button
+                  className={accountType === type ? 'is-active' : ''}
+                  key={type}
+                  type="button"
+                  onClick={() => changeAccountType(type)}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
+            </div>
 
             {loading && (
               <div className="loading-state" role="status">
@@ -154,7 +265,7 @@ function App() {
               <div className="error-state" role="alert">
                 <strong>Something went wrong</strong>
                 <p>{error}</p>
-                <button className="secondary-button" type="button" onClick={fetchReadiness}>Try again</button>
+                <button className="secondary-button" type="button" onClick={() => fetchReadiness(accountType)}>Try again</button>
               </div>
             )}
             {!loading && !error && (
@@ -167,18 +278,13 @@ function App() {
                 </div>
                 <div className="steps-list">
                   {steps.map((step, index) => {
-                    const isComplete = Boolean(completedSteps[step.id])
+                    const isComplete = Boolean(completedSteps[step.key])
                     return (
                       <label className={`step-row ${isComplete ? 'is-complete' : ''}`} key={step.id}>
                         <input
                           type="checkbox"
                           checked={isComplete}
-                          onChange={() =>
-                            setCompletedSteps((current) => ({
-                              ...current,
-                              [step.id]: !current[step.id],
-                            }))
-                          }
+                          onChange={() => handleStepToggle(step.key)}
                         />
                         <span className="custom-checkbox" aria-hidden="true">{isComplete ? '✓' : ''}</span>
                         <span className="step-number">{String(index + 1).padStart(2, '0')}</span>
@@ -195,6 +301,16 @@ function App() {
                   <span className="notice-icon">i</span>
                   <p>{data.notice}</p>
                 </div>
+                {readinessResult && (
+                  <div className="readiness-result" role="status">
+                    <span className="score-ring">{readinessResult.score}%</span>
+                    <div>
+                      <strong>Simulated readiness review</strong>
+                      <p>{readinessResult.recommendation}</p>
+                      <small>{readinessResult.disclaimer}</small>
+                    </div>
+                  </div>
+                )}
                 <a
                   className="help-link"
                   href={data.official_help_url}
@@ -226,11 +342,13 @@ function App() {
                 <label className="sr-only" htmlFor="question">Ask a question</label>
                 <input
                   id="question"
+                  minLength={2}
+                  maxLength={500}
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   placeholder="Type your question…"
                 />
-                <button type="submit" aria-label="Submit question" disabled={!question.trim() || assistantLoading}>
+                <button type="submit" aria-label="Submit question" disabled={question.trim().length < 2 || assistantLoading}>
                   {assistantLoading ? '…' : '→'}
                 </button>
               </form>
@@ -239,9 +357,12 @@ function App() {
                 <div className="assistant-answer" role="status">
                   {assistantAnswer.topic && <strong>{assistantAnswer.topic}</strong>}
                   <p>{assistantAnswer.answer}</p>
-                  <a href={assistantAnswer.source_url} target="_blank" rel="noreferrer">
-                    Read official guidance <span aria-hidden="true">↗</span>
-                  </a>
+                  {(assistantAnswer.sources || [{ url: assistantAnswer.source_url, title: 'Official guidance' }]).map((source) => (
+                    <a href={source.url} key={`${source.url}:${source.title}`} target="_blank" rel="noreferrer">
+                      {source.title} <span aria-hidden="true">↗</span>
+                    </a>
+                  ))}
+                  <small>Answer mode: {assistantAnswer.provider || 'verified knowledge base'}</small>
                 </div>
               )}
               <p className="prototype-note">Prototype · General guidance only · Questions are not stored</p>
@@ -256,6 +377,100 @@ function App() {
             </section>
           </aside>
         </div>
+
+        <section className="lab-grid" aria-label="Prototype labs">
+          <form className="card lab-card" onSubmit={reviewDocument}>
+            <p className="eyebrow">Safe sample lab</p>
+            <h2>Simulated document review</h2>
+            <p className="card-description">
+              Test field extraction and readability using synthetic or fully redacted text only.
+              Real identity documents are not accepted or stored.
+            </p>
+            <div className="field-row">
+              <label>
+                Sample type
+                <select value={documentType} onChange={(event) => setDocumentType(event.target.value)}>
+                  <option value="identity">Identity</option>
+                  <option value="business">Business</option>
+                  <option value="address">Address</option>
+                </select>
+              </label>
+              <label>
+                Readability: {imageQuality}%
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={imageQuality}
+                  onChange={(event) => setImageQuality(Number(event.target.value))}
+                />
+              </label>
+            </div>
+            <label className="sample-label" htmlFor="sample-document">Synthetic/redacted fields</label>
+            <textarea
+              id="sample-document"
+              value={sampleText}
+              onChange={(event) => setSampleText(event.target.value)}
+              placeholder="Load a safe sample or enter redacted key: value fields"
+            />
+            <div className="button-row">
+              <button className="secondary-button" type="button" onClick={loadSample}>Load safe sample</button>
+              <button className="primary-button" type="submit" disabled={!sampleText.trim() || documentLoading}>
+                {documentLoading ? 'Reviewing…' : 'Review sample'}
+              </button>
+            </div>
+            {documentError && <p className="inline-error" role="alert">{documentError}</p>}
+            {documentResult && (
+              <div className="lab-result" role="status">
+                <strong>{documentResult.result === 'sample-ready' ? 'Sample looks ready' : 'Sample needs attention'}</strong>
+                <p>{documentResult.recommendation}</p>
+                <dl>
+                  <div><dt>Readability</dt><dd>{documentResult.readability}</dd></div>
+                  <div><dt>Fields found</dt><dd>{Object.keys(documentResult.extracted_fields).length}</dd></div>
+                  <div><dt>Missing</dt><dd>{documentResult.missing_fields.join(', ') || 'None'}</dd></div>
+                </dl>
+                <small>{documentResult.disclaimer}</small>
+              </div>
+            )}
+          </form>
+
+          <section className="card lab-card sandbox-card" aria-labelledby="sandbox-title">
+            <p className="eyebrow">Developer demonstration</p>
+            <h2 id="sandbox-title">PayPal Sandbox checkout</h2>
+            <p className="card-description">
+              Create a USD 1.00 test order through the backend. Server credentials never enter the browser.
+            </p>
+            <div className="sandbox-state">
+              <span className={`status-dot ${sandboxStatus?.configured ? '' : 'is-muted'}`} />
+              {sandboxStatus?.configured ? 'Sandbox configured' : 'Credentials not configured'}
+            </div>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={!sandboxStatus?.configured}
+              onClick={createSandboxOrder}
+            >
+              Create test order
+            </button>
+            {sandboxError && <p className="inline-error" role="alert">{sandboxError}</p>}
+            {sandboxResult && (
+              <div className="lab-result" role="status">
+                <strong>Sandbox order {sandboxResult.status}</strong>
+                <p>Order ID: {sandboxResult.id}</p>
+                {sandboxResult.approve_url && (
+                  <a href={sandboxResult.approve_url} target="_blank" rel="noreferrer">Open Sandbox approval ↗</a>
+                )}
+              </div>
+            )}
+            <div className="notice-box">
+              <span className="notice-icon">i</span>
+              <p>Sandbox payments test checkout only. They do not affect or represent PayPal KYC approval.</p>
+            </div>
+            <a className="help-link" href="https://developer.paypal.com/api/make-api-requests/" target="_blank" rel="noreferrer">
+              PayPal Sandbox documentation <span aria-hidden="true">↗</span>
+            </a>
+          </section>
+        </section>
       </main>
 
       <footer>

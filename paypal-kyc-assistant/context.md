@@ -240,3 +240,72 @@ Official references to use:
 - PayPal India receiving payments
 - PayPal Checkout integration
 My recommendation: finish Tasks 1–3 first. Don't spend today's time on animations or extra dashboard styling. A functioning assistant backed by trustworthy sources adds more value to your hackathon demo than visual polish alone.
+
+Your next development checklist
+Implementation progress
+
+16/20 implemented
+
+Remaining manual/integration work: enable privacy-reviewed document AI/OCR,
+run a credentialed PayPal Sandbox order, run the full backend workflow on a
+machine with Python, and record the prepared demo.
+
+
+
+Phase 1 — AI KYC assistant
+[x] Create FastAPI backend endpoints
+[x] Connect Gemini API securely
+[x] Build a verified PayPal KYC knowledge base
+[x] Display AI answers with official sources
+
+
+Phase 2 — Smart KYC readiness
+[x] Create personal/business account preparation flows
+[x] Build a dynamic readiness score
+[x] Detect missing checklist requirements
+[x] Generate personalized next-step recommendations
+
+
+Phase 3 — AI document analysis
+[x] Support synthetic or redacted sample documents
+[ ] Extract document fields using AI/OCR
+[x] Check missing fields and image readability
+[x] Show a simulated document review result
+
+
+Phase 4 — PayPal integration
+[x] Review PayPal Developer API capabilities
+[x] Select a meaningful supported PayPal Sandbox workflow
+[ ] Integrate and test the Sandbox API (integration implemented; credentialed test pending)
+[x] Clearly separate Sandbox activity from KYC approval
+
+
+Phase 5 — Submission
+[x] Add privacy and error handling
+[ ] Test complete application workflow
+[x] Prepare GitHub repository and README
+[ ] Record demo and prepare submission (script prepared in DEMO_SCRIPT.md)
+
+
+Example of how your finished project should work
+EXAMPLE — SIMULATED KYC READINESS REVIEW
+KYC Readiness
+Based on sample checklist responses
+
+75%
+
+
+
+Account information provided
+
+Business information provided
+
+Sample identity document reviewed
+
+Address information incomplete
+
+
+AI recommendation
+
+Your address information is incomplete. Review the address requirements in PayPal's official guidance before proceeding.
+This is a readiness demonstration, not an actual PayPal KYC status or approval.
