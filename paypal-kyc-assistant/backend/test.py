@@ -2,18 +2,65 @@
 
 import os
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-
-os.environ.pop("GEMINI_API_KEY", None)
-os.environ.pop("PAYPAL_SANDBOX_CLIENT_ID", None)
-os.environ.pop("PAYPAL_SANDBOX_CLIENT_SECRET", None)
 
 from main import app  # noqa: E402
 
 
 class PayReadyApiTests(unittest.TestCase):
     client = TestClient(app)
+
+    def setUp(self):
+        environment = patch.dict(os.environ, {
+            "GEMINI_API_KEY": "",
+            "PAYPAL_SANDBOX_CLIENT_ID": "",
+            "PAYPAL_SANDBOX_CLIENT_SECRET": "",
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def test_invalid_assistant_requests(self):
+        for payload in ({}, {"question": ""}, {"question": "   "},
+                        {"question": 123}, {"question": "x" * 501}):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.client.post("/api/assistant", json=payload).status_code, 422)
+
+    def test_malformed_json(self):
+        response = self.client.post("/api/assistant", content="{broken",
+                                    headers={"Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 422)
+
+    def test_unknown_question(self):
+        response = self.client.post("/api/assistant", json={"question": "Tell me about bananas"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["matched"])
+        self.assertEqual(response.json()["topic"], None)
+        self.assertIn("do not have a verified guidance answer", response.json()["answer"])
+        self.assertNotIn("approved", response.json()["answer"].casefold())
+
+    def test_supported_knowledge_topics(self):
+        cases = (
+            ("How do I prepare for KYC?", "Identity verification"),
+            ("How does merchant onboarding work?", "Merchant onboarding"),
+            ("What is needed to receive payments?", "Receiving payments"),
+            ("How does the penny drop work?", "Confirming a bank account"),
+            ("Can I accept domestic payments?", "Domestic payments in India"),
+            ("Why is verification delayed?", "Common verification problems"),
+            ("How do I remove an account limitation?", "Account limitations"),
+        )
+        for question, expected_topic in cases:
+            with self.subTest(question=question):
+                result = self.client.post("/api/assistant", json={"question": question})
+                self.assertEqual(result.status_code, 200)
+                self.assertTrue(result.json()["matched"])
+                self.assertEqual(result.json()["topic"], expected_topic)
+                self.assertTrue(result.json()["sources"])
+                self.assertTrue(all(
+                    source["url"].startswith("https://www.paypal.com/")
+                    for source in result.json()["sources"]
+                ))
 
     def test_health_reports_optional_integrations(self):
         response = self.client.get("/api/health")

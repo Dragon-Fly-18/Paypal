@@ -92,7 +92,7 @@ function App() {
   const handleQuestionSubmit = async (event) => {
     event.preventDefault()
     const submittedQuestion = question.trim()
-    if (!submittedQuestion || assistantLoading) return
+    if (submittedQuestion.length < 2 || assistantLoading) return
     setAssistantLoading(true)
     setAssistantError('')
     setAssistantAnswer(null)
@@ -342,11 +342,13 @@ function App() {
                 <label className="sr-only" htmlFor="question">Ask a question</label>
                 <input
                   id="question"
+                  minLength={2}
+                  maxLength={500}
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   placeholder="Type your question…"
                 />
-                <button type="submit" aria-label="Submit question" disabled={!question.trim() || assistantLoading}>
+                <button type="submit" aria-label="Submit question" disabled={question.trim().length < 2 || assistantLoading}>
                   {assistantLoading ? '…' : '→'}
                 </button>
               </form>
@@ -356,7 +358,7 @@ function App() {
                   {assistantAnswer.topic && <strong>{assistantAnswer.topic}</strong>}
                   <p>{assistantAnswer.answer}</p>
                   {(assistantAnswer.sources || [{ url: assistantAnswer.source_url, title: 'Official guidance' }]).map((source) => (
-                    <a href={source.url} key={source.url} target="_blank" rel="noreferrer">
+                    <a href={source.url} key={`${source.url}:${source.title}`} target="_blank" rel="noreferrer">
                       {source.title} <span aria-hidden="true">↗</span>
                     </a>
                   ))}

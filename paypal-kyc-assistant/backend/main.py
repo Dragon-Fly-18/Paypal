@@ -48,9 +48,11 @@ class AccountType(str, Enum):
 class AssistantRequest(BaseModel):
     question: str = Field(min_length=2, max_length=500)
 
-    @field_validator("question")
+    @field_validator("question", mode="before")
     @classmethod
     def reject_sensitive_values(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Question must be text.")
         value = value.strip()
         if contains_sensitive_data(value):
             raise ValueError(

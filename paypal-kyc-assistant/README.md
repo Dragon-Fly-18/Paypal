@@ -20,7 +20,7 @@ Requirements: Node.js 20+, Python 3.10+.
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-foundation.txt
 Copy-Item ..\.env.example .env
 python -m uvicorn main:app --reload
 ```
@@ -35,6 +35,37 @@ npm run dev
 
 Open `http://localhost:5173`. API documentation is at
 `http://127.0.0.1:8000/docs`.
+
+The foundation requirements include the HTTP clients needed for API tests and
+Sandbox requests. The existing `requirements.txt` contains the broader optional
+dependency collection, including Gemini. Install optional integrations separately
+when you enable them.
+
+### Foundation verification
+
+Verified on October 26, 2026: 11 backend tests pass, dependency checks pass,
+frontend lint and production build pass. Browser checks confirmed checklist
+progress (one of seven items = 14%), API-backed assistant answers and sources,
+disabled whitespace submission, connection errors with the backend stopped,
+and successful checklist recovery through Try again after restarting the backend.
+
+The verified knowledge base covers identity verification, merchant onboarding,
+receiving payments, bank confirmation, domestic payments, common verification
+problems, account limitations, and the PayPal Sandbox. Each answer links to an
+official source and unknown questions return a neutral fallback without claiming
+access to account status or KYC approval.
+
+The API tests cover health, personal/business checklists, score calculation,
+assistant answers, missing/empty/whitespace input, incorrect types, overlong input,
+malformed JSON, and unknown questions. Tests override integration credentials to
+avoid external service calls even when a local `.env` exists.
+
+For the browser smoke check, start both servers, select checklist items and confirm
+the percentage updates, then submit a suggested assistant question and check its
+source link. Blank or one-character questions should leave Submit disabled.
+Stop the backend, refresh the dashboard, and confirm the connection error and
+Try again button appear. Restart the backend and click Try again to recover.
+Also submit a question while the backend is stopped and check the assistant error.
 
 ## Optional integrations
 

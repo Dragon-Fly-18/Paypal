@@ -26,10 +26,12 @@ def contains_sensitive_data(value: str) -> bool:
 def answer_with_verified_context(question: str) -> dict[str, Any]:
     """Use Gemini when configured, otherwise return deterministic local guidance."""
     entries = search_guidance(question)
-    sources = [
-        {"title": entry["source_title"], "url": entry["source_url"]}
-        for entry in entries
-    ]
+    sources = []
+    seen_urls = set()
+    for entry in entries:
+        if entry["source_url"] not in seen_urls:
+            sources.append({"title": entry["source_title"], "url": entry["source_url"]})
+            seen_urls.add(entry["source_url"])
     fallback = entries[0]["answer"] if entries else NO_MATCH_RESPONSE
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
 
